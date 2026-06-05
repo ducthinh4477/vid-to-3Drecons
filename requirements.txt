@@ -1,0 +1,12 @@
+opencv-python
+numpy
+pandas
+matplotlib
+scikit-image
+tqdm
+pyyaml
+rich
+h5py
+torch
+torchvision
+torchaudio

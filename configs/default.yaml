@@ -1,0 +1,67 @@
+project:
+  name: vid-to-3Drecons
+  seed: 42
+
+paths:
+  raw_videos: data/raw_videos
+  frames_raw: data/frames_raw
+  frames_selected: data/frames_selected
+  masks: data/masks
+  outputs: outputs
+
+frame_extraction:
+  fps: 5
+  image_format: jpg
+  quality: 2
+
+quality_metrics:
+  use_sharpness: true
+  use_brightness: true
+  use_dynamic_range: true
+  use_redundancy: true
+  use_keypoints: true
+
+scoring:
+  weights:
+    sharpness: 0.35
+    brightness: 0.20
+    keypoints: 0.25
+    dynamic_range: 0.10
+    clipping_penalty: 0.05
+    redundancy_penalty: 0.05
+
+selection:
+  policies:
+    no_filter:
+      enabled: true
+    light_filter:
+      quality_percentile: 20
+      max_ssim: 0.98
+    medium_filter:
+      quality_percentile: 40
+      max_ssim: 0.95
+    strong_filter:
+      quality_percentile: 60
+      max_ssim: 0.92
+
+colmap:
+  camera_model: SIMPLE_RADIAL
+  use_gpu: true
+
+hloc:
+  enabled: false
+  feature_conf: superpoint_aachen
+  matcher_conf: lightglue
+  pairs_method: sequential
+  retrieval_top_k: 20
+
+dust3r:
+  enabled: false
+  image_size: 512
+  niter: 300
+
+optional:
+  mask_dynamic: false
+  rife: false
+  tecogan: false
+  gaussian_splatting: false

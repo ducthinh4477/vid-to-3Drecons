@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Conda
+.conda/
+
+# VSCode
+.vscode/
+
+# Data
+data/raw_videos/*
+data/frames_raw/*
+data/frames_selected/*
+data/masks/*
+
+# Outputs
+outputs/*
+
+# Large files
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.ply
+*.bin
+*.h5
+*.db
+*.pth
+*.pt
+*.ckpt
+
+# Keep folders
+!data/raw_videos/.gitkeep
+!data/frames_raw/.gitkeep
+!data/frames_selected/.gitkeep
+!data/masks/.gitkeep
+!outputs/frame_quality/.gitkeep
+!outputs/reconstructions/.gitkeep
+!outputs/comparisons/.gitkeep
+!outputs/figures/.gitkeep
+!outputs/reports/.gitkeep
