@@ -57,6 +57,7 @@ vid-to-3Drecons/
     07_evaluate_colmap.py
     08_compare_experiments.py
     09_export_report_assets.py
+    10_run_all_colmap_policies.py
   src/
     frame_quality/
     reconstruction/
@@ -108,6 +109,87 @@ strong_filter  quality percentile 60, max_ssim 0.92
 
 The selected images and `selected_frames.csv` are saved in the output folder.
 
+## Phase 2: Compare Frame Filtering Policies
+
+After running `03_select_frames.py` for one or more policies, compare the selected frame sets:
+
+```powershell
+python scripts/08_compare_experiments.py --scene scene01 --quality outputs/frame_quality/scene01/frame_quality.csv --selected-root data/frames_selected/scene01 --out outputs/comparisons/scene01_frame_filtering_summary.csv
+```
+
+This writes:
+
+```text
+outputs/comparisons/scene01_frame_filtering_summary.csv
+outputs/comparisons/scene01_frame_filtering_summary.json
+```
+
+Generate report figures from the quality CSV and comparison CSV:
+
+```powershell
+python scripts/09_export_report_assets.py --scene scene01 --quality outputs/frame_quality/scene01/frame_quality.csv --comparison outputs/comparisons/scene01_frame_filtering_summary.csv --out-dir outputs/figures
+```
+
+This writes:
+
+```text
+outputs/figures/scene01_quality_score_hist.png
+outputs/figures/scene01_sharpness_hist.png
+outputs/figures/scene01_selected_count_by_policy.png
+outputs/figures/scene01_mean_quality_by_policy.png
+outputs/figures/scene01_mean_sharpness_by_policy.png
+outputs/figures/scene01_mean_keypoints_by_policy.png
+```
+
+## Phase 3: Run COLMAP Reconstruction
+
+Run plain COLMAP automatic reconstruction for one filtering policy:
+
+```powershell
+python scripts/05_run_hloc_colmap.py --scene scene01 --policy medium_filter --images data/frames_selected/scene01/medium_filter --workspace outputs/reconstructions/scene01/medium_filter/colmap --quality medium --camera-model SIMPLE_RADIAL --single-camera 1
+```
+
+Evaluate one COLMAP reconstruction:
+
+```powershell
+python scripts/07_evaluate_colmap.py --scene scene01 --policy medium_filter --workspace outputs/reconstructions/scene01/medium_filter/colmap --out outputs/reconstructions/scene01/medium_filter/metrics.json
+```
+
+Run COLMAP and evaluation for all frame filtering policies:
+
+```powershell
+python scripts/10_run_all_colmap_policies.py --scene scene01 --policies no_filter light_filter medium_filter strong_filter --quality medium
+```
+
+Compare COLMAP metrics across policies:
+
+```powershell
+python scripts/08_compare_experiments.py --scene scene01 --recon-root outputs/reconstructions/scene01 --out outputs/comparisons/scene01_colmap_summary.csv
+```
+
+Export COLMAP report figures:
+
+```powershell
+python scripts/09_export_report_assets.py --scene scene01 --colmap-comparison outputs/comparisons/scene01_colmap_summary.csv --out-dir outputs/figures
+```
+
+This writes:
+
+```text
+outputs/reconstructions/scene01/<policy>/colmap/colmap_run.log
+outputs/reconstructions/scene01/<policy>/metrics.json
+outputs/reconstructions/scene01/<policy>/metrics.csv
+outputs/reconstructions/scene01/colmap_batch_summary.json
+outputs/comparisons/scene01_colmap_summary.csv
+outputs/comparisons/scene01_colmap_summary.json
+outputs/figures/scene01_registered_ratio_by_policy.png
+outputs/figures/scene01_sparse_points_by_policy.png
+outputs/figures/scene01_reprojection_error_by_policy.png
+outputs/figures/scene01_dense_points_by_policy.png
+```
+
+Script `05_run_hloc_colmap.py` currently runs plain COLMAP only. hloc integration is still planned for a later phase.
+
 ## Frame Quality Metrics
 
 The current quality score combines:
@@ -125,4 +207,4 @@ The final score is clamped to `[0, 1]`. ORB keypoint count is used as a lightwei
 
 ## Later Stages
 
-Scripts `04` through `09` are placeholders. They currently print TODO messages and expected input/output locations only. Full masking, hloc/COLMAP, DUST3R, reconstruction evaluation, experiment comparison, and report export will be added later.
+Scripts `04` and `06` are placeholders. Full masking, hloc, DUST3R, and other reconstruction backends will be added later.
