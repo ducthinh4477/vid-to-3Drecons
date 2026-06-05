@@ -1,14 +1,79 @@
 # vid-to-3Drecons
 
-Minimal computer vision pipeline for a university Image Processing course. The current focus is frame quality assessment and frame filtering before future 3D reconstruction experiments.
+Du an xu ly anh / thi giac may tinh cho mon Image Processing. Dong gop chinh hien tai la danh gia chat luong frame va loc frame truoc khi chay tai tao 3D.
 
-Implemented pipeline:
+## Current Implementation Status
+
+Implemented:
+
+- frame extraction
+- frame quality computation
+- frame selection policies
+- frame filtering comparison
+- COLMAP automatic reconstruction
+- COLMAP model evaluation
+- comparison charts
+
+Not yet implemented:
+
+- hloc + SuperPoint + LightGlue
+- DUST3R
+- RIFE
+- TecoGAN
+- 3D Gaussian Splatting
+
+## Technical Honesty Note
+
+The project originally planned hloc + SuperPoint + LightGlue, but the current experimental results are generated using COLMAP automatic_reconstructor with SIFT. Therefore, all current reported metrics must be attributed to COLMAP SIFT, not hloc.
+
+Current experiment summary:
+The current scene01 results were obtained using COLMAP automatic_reconstructor. COLMAP performed SIFT feature extraction and matching internally, followed by sparse reconstruction and dense fusion. hloc, SuperPoint, and LightGlue were not used in the current run. They remain planned as a future comparison branch.
+
+## Current Implemented Pipeline
 
 ```text
-video -> extract frames -> compute frame quality -> select frames
+Video input
+-> Extract frames
+-> Compute frame quality metrics:
+   - Laplacian variance sharpness
+   - brightness / exposure / clipping / dynamic range
+   - SSIM redundancy
+   - ORB keypoint count as texture proxy
+-> Compute weighted quality score
+-> Select frames using no_filter / light_filter / medium_filter / strong_filter
+-> Run COLMAP automatic_reconstructor
+-> COLMAP SIFT feature extraction and matching
+-> COLMAP sparse reconstruction
+-> COLMAP dense fusion
+-> Evaluate sparse and dense metrics
 ```
 
-COLMAP, hloc, DUST3R, RIFE, TecoGAN, and 3D Gaussian Splatting integration are intentionally left for later stages.
+Feature extraction and matching in Phase 3 are performed by COLMAP's built-in SIFT pipeline. ORB keypoint count is used during preprocessing as a lightweight proxy for texture richness.
+
+## Planned Extension Pipeline
+
+Future Phase 4:
+
+```text
+hloc + SuperPoint + LightGlue + COLMAP
+-> compare against COLMAP SIFT baseline
+```
+
+In a future phase, hloc with SuperPoint and LightGlue can be integrated to replace or compare against COLMAP's built-in SIFT feature extraction and matching.
+
+Future fallback branch:
+
+```text
+DUST3R for low-quality or difficult image sets
+```
+
+DUST3R is planned as a fallback branch for low-quality data or cases where COLMAP fails, but it has not been integrated in the current Phase 3 experiments.
+
+Optional future video enhancement:
+
+- RIFE for low-FPS videos
+- TecoGAN or other super-resolution for low-resolution videos
+- 3D Gaussian Splatting after reliable camera poses are available
 
 ## Windows VSCode Setup
 
@@ -37,16 +102,16 @@ vid-to-3Drecons/
     default.yaml
     experiments.yaml
   data/
-    raw_videos/          # input videos
-    frames_raw/          # extracted video frames
-    frames_selected/     # selected frame subsets
-    masks/               # future masks
+    raw_videos/
+    frames_raw/
+    frames_selected/
+    masks/
   outputs/
-    frame_quality/       # CSV metrics and JSON summaries
-    reconstructions/     # future reconstruction outputs
-    comparisons/         # future experiment comparisons
-    figures/             # future report figures
-    reports/             # future report assets
+    frame_quality/
+    reconstructions/
+    comparisons/
+    figures/
+    reports/
   scripts/
     01_extract_frames.py
     02_compute_frame_quality.py
@@ -65,18 +130,14 @@ vid-to-3Drecons/
     utils/
 ```
 
-## Run The Minimum Pipeline
+Note: `05_run_hloc_colmap.py` keeps a historical filename, but currently runs plain COLMAP automatic_reconstructor only.
 
-Put a video at `data/raw_videos/scene01.mp4`, then run:
+## Phase 1: Frame Preprocessing
+
+Extract frames:
 
 ```powershell
 python scripts/01_extract_frames.py --video data/raw_videos/scene01.mp4 --scene scene01 --fps 5
-```
-
-This saves sampled frames to:
-
-```text
-data/frames_raw/scene01/frame_000001.jpg
 ```
 
 Compute frame quality metrics:
@@ -85,14 +146,7 @@ Compute frame quality metrics:
 python scripts/02_compute_frame_quality.py --scene scene01 --frames data/frames_raw/scene01 --out outputs/frame_quality/scene01/frame_quality.csv
 ```
 
-This writes:
-
-```text
-outputs/frame_quality/scene01/frame_quality.csv
-outputs/frame_quality/scene01/frame_quality_summary.json
-```
-
-Select frames using one of the filtering policies:
+Select frames:
 
 ```powershell
 python scripts/03_select_frames.py --scene scene01 --frames data/frames_raw/scene01 --quality outputs/frame_quality/scene01/frame_quality.csv --policy medium_filter --out data/frames_selected/scene01/medium_filter
@@ -107,43 +161,23 @@ medium_filter  quality percentile 40, max_ssim 0.95
 strong_filter  quality percentile 60, max_ssim 0.92
 ```
 
-The selected images and `selected_frames.csv` are saved in the output folder.
-
 ## Phase 2: Compare Frame Filtering Policies
 
-After running `03_select_frames.py` for one or more policies, compare the selected frame sets:
+Compare selected frame sets:
 
 ```powershell
 python scripts/08_compare_experiments.py --scene scene01 --quality outputs/frame_quality/scene01/frame_quality.csv --selected-root data/frames_selected/scene01 --out outputs/comparisons/scene01_frame_filtering_summary.csv
 ```
 
-This writes:
-
-```text
-outputs/comparisons/scene01_frame_filtering_summary.csv
-outputs/comparisons/scene01_frame_filtering_summary.json
-```
-
-Generate report figures from the quality CSV and comparison CSV:
+Export frame filtering figures:
 
 ```powershell
 python scripts/09_export_report_assets.py --scene scene01 --quality outputs/frame_quality/scene01/frame_quality.csv --comparison outputs/comparisons/scene01_frame_filtering_summary.csv --out-dir outputs/figures
 ```
 
-This writes:
+## Phase 3: Run COLMAP automatic_reconstructor
 
-```text
-outputs/figures/scene01_quality_score_hist.png
-outputs/figures/scene01_sharpness_hist.png
-outputs/figures/scene01_selected_count_by_policy.png
-outputs/figures/scene01_mean_quality_by_policy.png
-outputs/figures/scene01_mean_sharpness_by_policy.png
-outputs/figures/scene01_mean_keypoints_by_policy.png
-```
-
-## Phase 3: Run COLMAP Reconstruction
-
-Run plain COLMAP automatic reconstruction for one filtering policy:
+Run COLMAP automatic_reconstructor for one filtering policy:
 
 ```powershell
 python scripts/05_run_hloc_colmap.py --scene scene01 --policy medium_filter --images data/frames_selected/scene01/medium_filter --workspace outputs/reconstructions/scene01/medium_filter/colmap --quality medium --camera-model SIMPLE_RADIAL --single-camera 1
@@ -155,7 +189,7 @@ Evaluate one COLMAP reconstruction:
 python scripts/07_evaluate_colmap.py --scene scene01 --policy medium_filter --workspace outputs/reconstructions/scene01/medium_filter/colmap --out outputs/reconstructions/scene01/medium_filter/metrics.json
 ```
 
-Run COLMAP and evaluation for all frame filtering policies:
+Run COLMAP evaluation/reconstruction flow for all frame filtering policies:
 
 ```powershell
 python scripts/10_run_all_colmap_policies.py --scene scene01 --policies no_filter light_filter medium_filter strong_filter --quality medium
@@ -173,7 +207,7 @@ Export COLMAP report figures:
 python scripts/09_export_report_assets.py --scene scene01 --colmap-comparison outputs/comparisons/scene01_colmap_summary.csv --out-dir outputs/figures
 ```
 
-This writes:
+Expected outputs:
 
 ```text
 outputs/reconstructions/scene01/<policy>/colmap/colmap_run.log
@@ -188,7 +222,13 @@ outputs/figures/scene01_reprojection_error_by_policy.png
 outputs/figures/scene01_dense_points_by_policy.png
 ```
 
-Script `05_run_hloc_colmap.py` currently runs plain COLMAP only. hloc integration is still planned for a later phase.
+## Scene01 Result Interpretation
+
+- `light_filter` is the best balanced policy for scene01.
+- `no_filter` gives the most points but uses the most frames.
+- `light_filter` reduces the input from 635 to 508 frames while keeping strong reconstruction quality.
+- `medium_filter` and `strong_filter` produce higher-quality selected frames but reduce coverage and model completeness because they remove too many intermediate views.
+- This supports the main Image Processing contribution: frame quality assessment and filtering can reduce redundancy, but filtering must preserve geometric overlap.
 
 ## Frame Quality Metrics
 
@@ -203,8 +243,22 @@ The current quality score combines:
 - 0.05 * redundancy_penalty
 ```
 
-The final score is clamped to `[0, 1]`. ORB keypoint count is used as a lightweight temporary proxy before future SuperPoint integration.
+The final score is clamped to `[0, 1]`.
 
-## Later Stages
+## TODO Phase 4 hloc Integration
 
-Scripts `04` and `06` are placeholders. Full masking, hloc, DUST3R, and other reconstruction backends will be added later.
+- install hloc
+- extract SuperPoint features
+- generate image pairs
+- match with LightGlue
+- import matches into COLMAP / run hloc reconstruction
+- compare hloc result against current COLMAP SIFT baseline
+- compare metrics: registered images, sparse points, reprojection error, dense points, runtime
+
+## TODO DUST3R Fallback
+
+- prepare low-quality image set
+- run COLMAP baseline
+- run DUST3R
+- compare point cloud completeness and visual distortion
+- do not claim DUST3R results until actual outputs exist

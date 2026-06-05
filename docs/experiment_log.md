@@ -1,159 +1,87 @@
-## Scene01 — COLMAP results by frame filtering policy
+# Experiment Log
 
-### Common configuration
+## Technical Honesty Note
 
-- Scene: scene01
-- SfM pipeline: hloc (SuperPoint + LightGlue) + COLMAP
-- Input video FPS (sau khi tách): 5 FPS
+The project originally planned hloc + SuperPoint + LightGlue, but the current experimental results are generated using COLMAP automatic_reconstructor with SIFT. Therefore, all current reported metrics must be attributed to COLMAP SIFT, not hloc.
+
+Current experiment summary:
+The current scene01 results were obtained using COLMAP automatic_reconstructor. COLMAP performed SIFT feature extraction and matching internally, followed by sparse reconstruction and dense fusion. hloc, SuperPoint, and LightGlue were not used in the current run. They remain planned as a future comparison branch.
+
+## Scene01 - COLMAP automatic_reconstructor Results by Frame Filtering Policy
+
+### Cấu hình chung
+
+- Scene: `scene01`
+- SfM pipeline: COLMAP automatic_reconstructor with COLMAP SIFT features
+- Feature extraction and matching: COLMAP built-in SIFT
+- Sparse reconstruction: COLMAP
+- Dense fusion: COLMAP
+- hloc / SuperPoint / LightGlue: không dùng trong lần chạy hiện tại
+- Input video FPS sau khi tách frame: 5 FPS
 - Policies: `no_filter`, `light_filter`, `medium_filter`, `strong_filter`
 
----
+## Tóm tắt frame filtering
 
-## Scene01 — no_filter COLMAP result
+| Policy | Total Frames | Selected Frames | Removal Ratio | Mean Quality Score | Notes |
+| ------ | -----------: | --------------: | ------------: | -----------------: | ----- |
+| no_filter | 635 | 635 | 0% | 0.4071 | Baseline, giữ tất cả frame |
+| light_filter | 635 | 508 | 20% | 0.4695 | Lọc nhẹ, giữ overlap tốt |
+| medium_filter | 635 | 381 | 40% | 0.5324 | Chất lượng frame cao hơn nhưng coverage giảm |
+| strong_filter | 635 | 254 | 60% | 0.6091 | Lọc mạnh, mất nhiều view trung gian |
 
-### Input
+## COLMAP automatic_reconstructor Results
 
-- Policy: `no_filter`
-- Frames after selection: 635
-- Sparse path: `outputs/reconstructions/scene01/no_filter/colmap/sparse/0`
-- (Dense chưa chạy / chưa ghi log)
+| Policy | Selected Frames | Images in Model | Registered Images | Registered Ratio | Sparse Points | Observations | Mean Track Length | Mean Observations / Image | Reproj Error | Dense Points | Notes |
+| ------ | --------------: | --------------: | ----------------: | ---------------: | ------------: | -----------: | ----------------: | ------------------------: | -----------: | -----------: | ----- |
+| no_filter | 635 | 583 | 583 | 100% | 41,441 | 280,504 | 6.768756 | 481.138937 | 1.064571 px | 1,950,803 | Nhiều points nhất nhưng dùng nhiều frame nhất |
+| light_filter | 508 | 490 | 490 | 100% | 38,946 | 263,636 | 6.769270 | 538.032653 | 1.051125 px | 1,803,143 | Cân bằng tốt nhất giữa giảm frame và giữ reconstruction |
+| medium_filter | 381 | 217 | 217 | 100% | 17,902 | 130,720 | 7.301977 | 602.396313 | 1.071107 px | 804,850 | Frame được lọc tốt hơn nhưng coverage giảm mạnh |
+| strong_filter | 254 | 143 | 143 | 100% | 16,995 | 102,571 | 6.035363 | 717.279720 | 0.977788 px | 397,382 | Reprojection error thấp nhưng model nhỏ, kém đầy đủ |
 
-### Sparse reconstruction metrics
+Ghi chú: `Images in Model` là số ảnh nằm trong sparse model tốt nhất do COLMAP báo cáo. `Selected Frames` là số ảnh trong folder sau bước frame filtering.
 
-| Metric                    | Value       |
-|---------------------------|------------:|
-| Images                    | 583         |
-| Registered images         | 583         |
-| Registered ratio          | 91.8%       |
-| Sparse points             | 41,441      |
-| Observations              | 280,504     |
-| Mean track length         | 6.768756    |
-| Mean observations / image | 481.138937  |
-| Mean reprojection error   | 1.064571 px |
+## Nhận xét theo policy
 
-### Dense reconstruction metrics
+### no_filter
 
-Chưa chạy dense reconstruction cho cấu hình `no_filter` (có thể bổ sung sau nếu cần so sánh chi tiết hơn).
+`no_filter` là baseline không lọc frame. Chính sách này tạo nhiều sparse points và dense points nhất, nhưng dùng nhiều frame nhất nên redundancy và thời gian xử lý cao hơn. Kết quả này hữu ích làm baseline COLMAP SIFT.
 
-### Nhận xét
+### light_filter
 
-Pipeline với `no_filter` đăng ký được 583/635 ảnh (≈ 91.8%), tạo ra 41,441 điểm 3D và lỗi tái chiếu trung bình khoảng 1.06 px. Đây là baseline “không lọc” với nhiều frame dư thừa, thời gian matching lớn và không kiểm soát chất lượng từng frame.
+`light_filter` giảm input từ 635 xuống 508 frame, tức giảm khoảng 20%, nhưng vẫn giữ 490 ảnh trong model chính và tạo 38,946 sparse points. Reprojection error thấp hơn `no_filter` một chút. Đây là policy cân bằng nhất cho `scene01`.
 
----
+### medium_filter
 
-## Scene01 — light_filter COLMAP result
+`medium_filter` chọn frame có quality score trung bình cao hơn, nhưng chỉ còn 381 frame và model chính chỉ có 217 ảnh. Sparse points và dense points giảm mạnh, cho thấy việc lọc quá nhiều frame trung gian làm giảm coverage hình học.
 
-### Input
+### strong_filter
 
-- Policy: `light_filter`
-- Frames after selection: 508
-- Sparse path: `outputs/reconstructions/scene01/light_filter/colmap/sparse/0`
-- (Dense chưa chạy / chưa ghi log)
+`strong_filter` cho reprojection error thấp nhất, nhưng chỉ còn 143 ảnh trong model chính và 16,995 sparse points. Chỉ số nội bộ có vẻ sạch hơn, nhưng model kém đầy đủ hơn vì mất overlap và view trung gian.
 
-### Sparse reconstruction metrics
+## Diễn giải chính
 
-| Metric                    | Value       |
-|---------------------------|------------:|
-| Images                    | 490         |
-| Registered images         | 490         |
-| Registered ratio          | 96.5%       |
-| Sparse points             | 38,946      |
-| Observations              | 263,636     |
-| Mean track length         | 6.769270    |
-| Mean observations / image | 538.032653  |
-| Mean reprojection error   | 1.051125 px |
+- `light_filter` is the best balanced policy for scene01.
+- `no_filter` gives the most points but uses the most frames.
+- `light_filter` reduces the input from 635 to 508 frames while keeping strong reconstruction quality.
+- `medium_filter` and `strong_filter` produce higher-quality selected frames but reduce coverage and model completeness because they remove too many intermediate views.
+- This supports the main Image Processing contribution: frame quality assessment and filtering can reduce redundancy, but filtering must preserve geometric overlap.
 
-### Dense reconstruction metrics
+## Planned Future Extensions
 
-Chưa chạy dense reconstruction cho cấu hình `light_filter`.
+### TODO Phase 4 hloc Integration
 
-### Nhận xét
+- install hloc
+- extract SuperPoint features
+- generate image pairs
+- match with LightGlue
+- import matches into COLMAP / run hloc reconstruction
+- compare hloc result against current COLMAP SIFT baseline
+- compare metrics: registered images, sparse points, reprojection error, dense points, runtime
 
-So với `no_filter`, `light_filter` giảm số frame đầu vào từ 635 xuống 508 (giảm khoảng 20%) nhưng số ảnh được register vẫn đạt 490, tương đương 96.5%. Reprojection error giảm nhẹ (1.0646 → 1.0511 px), trong khi số quan sát trung bình trên mỗi ảnh tăng (481.14 → 538.03), còn số điểm 3D chỉ giảm nhẹ (41,441 → 38,946). Điều này cho thấy lọc nhẹ loại bỏ được frame mờ/dư mà vẫn giữ đủ overlap để COLMAP tái tạo cảnh ổn định.
+### TODO DUST3R Fallback
 
----
-
-## Scene01 — medium_filter COLMAP result
-
-### Input
-
-- Policy: `medium_filter`
-- Frames after selection: 381
-- Sparse path: `outputs/reconstructions/scene01/medium_filter/colmap/sparse/0`
-- Dense path: `outputs/reconstructions/scene01/medium_filter/colmap/dense/1/fused.ply`
-
-### Sparse reconstruction metrics
-
-| Metric                    | Value       |
-|---------------------------|------------:|
-| Images                    | 217         |
-| Registered images         | 217         |
-| Registered ratio          | 100%        |
-| Sparse points             | 17,902      |
-| Observations              | 130,720     |
-| Mean track length         | 7.301977    |
-| Mean observations / image | 602.396313  |
-| Mean reprojection error   | 1.071107 px |
-
-### Dense reconstruction metrics
-
-| Metric           | Value        |
-|------------------|-------------:|
-| Fused points     | 743,392      |
-| Dense fusion time| 0.855 minutes|
-| Output file      | `dense/1/fused.ply` |
-
-### Nhận xét
-
-COLMAP đăng ký thành công toàn bộ 217 ảnh sau khi lọc bằng `medium_filter` (ratio 100%), với mean track length và observations/image cao hơn so với `no_filter` và `light_filter`, cho thấy các ảnh còn lại liên kết tốt với nhau. Tuy nhiên, số ảnh trong model chính giảm mạnh (từ 490 xuống 217) và số điểm 3D cũng giảm còn 17,902, phản ánh coverage cảnh bị thu hẹp đáng kể. Dense fusion vẫn tạo được 743k điểm cho visualization, nhưng mức lọc medium đã bắt đầu làm mất nhiều frame trung gian quan trọng cho overlap.
-
----
-
-## Scene01 — strong_filter COLMAP result
-
-### Input
-
-- Policy: `strong_filter`
-- Frames after selection: 254
-- Sparse path: `outputs/reconstructions/scene01/strong_filter/colmap/sparse/0`
-- (Dense chưa chạy / chưa ghi log)
-
-### Sparse reconstruction metrics
-
-| Metric                    | Value       |
-|---------------------------|------------:|
-| Images                    | 143         |
-| Registered images         | 143         |
-| Registered ratio          | 100%        |
-| Sparse points             | 16,995      |
-| Observations              | 102,571     |
-| Mean track length         | 6.035363    |
-| Mean observations / image | 717.279720  |
-| Mean reprojection error   | 0.977788 px |
-
-### Dense reconstruction metrics
-
-Chưa chạy dense reconstruction cho cấu hình `strong_filter`.
-
-### Nhận xét
-
-`strong_filter` cho reprojection error thấp nhất (≈ 0.98 px) và số quan sát trung bình trên mỗi ảnh cao nhất, nhưng số ảnh và số điểm 3D giảm rất mạnh (143 ảnh, 16,995 điểm). Mô hình sparse trở nên nhỏ và tập trung vào một phần cảnh dễ tái tạo hơn, dẫn tới lỗi tái chiếu thấp nhưng coverage toàn cảnh kém hơn. Đây là minh họa điển hình cho việc lọc quá mạnh: mô hình nội bộ “sạch” nhưng không còn phù hợp cho mục tiêu tái tạo đầy đủ cảnh 3D từ video đầu vào.
-
----
-
-## Scene01 — summary table
-
-### COLMAP Reconstruction Results (scene01)
-
-| Policy        | Images in folder | Registered images | Registered ratio | Sparse points | Mean reproj. error | Dense points | Notes                                      |
-|--------------|-----------------:|------------------:|-----------------:|--------------:|--------------------:|------------:|--------------------------------------------|
-| no_filter    | 635              | 583               | 91.8%            | 41,441        | 1.0646 px           | N/A         | Baseline, nhiều frame dư, thời gian lớn    |
-| light_filter | 508              | 490               | 96.5%            | 38,946        | 1.0511 px           | N/A         | Giảm ~20% frame, giữ coverage rất tốt      |
-| medium_filter| 381              | 217               | 100%             | 17,902        | 1.0711 px           | 743,392     | Mô hình thu hẹp, vẫn xem được dạng dense   |
-| strong_filter| 254              | 143               | 100%             | 16,995        | 0.9778 px           | N/A         | Lỗi thấp nhưng coverage kém, model rất nhỏ |
-
-### Tổng kết Scene01
-
-- `light_filter` cho kết quả cân bằng nhất: giảm số frame đầu vào khoảng 20% nhưng vẫn giữ được gần như toàn bộ ảnh trong model chính, reprojection error giảm nhẹ và số quan sát trên mỗi ảnh tăng.[file:59]  
-- `medium_filter` và `strong_filter` cho thấy lọc quá mạnh có thể làm giảm đáng kể coverage cảnh: số ảnh và số điểm 3D giảm nhiều dù các chỉ số nội bộ như reprojection error hoặc observations/image có thể trông “đẹp” hơn.[file:59]  
-- Những quan sát này phù hợp với mục tiêu đề tài: lọc frame ở mức hợp lý (light\_filter) giúp giảm dữ liệu dư thừa mà vẫn duy trì chất lượng tái tạo 3D từ video chất lượng trung bình do người dùng không chuyên quay.[file:59]  
+- prepare low-quality image set
+- run COLMAP baseline
+- run DUST3R
+- compare point cloud completeness and visual distortion
+- do not claim DUST3R results until actual outputs exist
