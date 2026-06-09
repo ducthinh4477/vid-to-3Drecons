@@ -26,6 +26,7 @@ data/demo_uploads/*
 outputs/*
 
 # Third-party checkouts
+_references/
 third_party/speedy-splat/
 third_party/supersplat-viewer/
 third_party/vis-3dgs/
@@ -33,6 +34,9 @@ third_party/vis-3dgs/
 # Viewer build/runtime
 viewer/node_modules/
 viewer/dist/
+node_modules/
+web/frontend/dist/
+web_demo_*.log
 
 # Large files
 *.mp4
@@ -41,6 +45,7 @@ viewer/dist/
 *.mkv
 *.ply
 *.splat
+*.gsplat
 *.ksplat
 *.compressed.ply
 *.bin

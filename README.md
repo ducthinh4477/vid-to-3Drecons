@@ -127,6 +127,12 @@ vid-to-3Drecons/
     12_collect_3dgs_output.py
     13_export_demo_assets.py
     14_launch_demo.py
+    15_export_colmap_preview.py
+    15_export_colmap_preview_ply.py
+    16_launch_demo_app.py
+    16_run_web_demo.py
+    17_validate_video_to_ply.py
+    18_selected_frames_to_gaussian_ply.py
   src/
     frame_quality/
     reconstruction/
@@ -269,17 +275,75 @@ Suggested 3DGS command:
 python train.py -s C:\GitHub\vid-to-3Drecons\data\3dgs\scene01_light -m output\scene01_light_3dgs_7k --iterations 7000 --resolution 2
 ```
 
+## One-page Web Demo
+
+The main demo is now PLY-first and runs in one local web app:
+
+```text
+load PLY directly
+or
+video -> extract frames -> quality scoring -> select frames
+      -> C:\GitHub\gaussian-splatting\convert.py
+      -> C:\GitHub\gaussian-splatting\train.py
+      -> outputs/demo/<scene>_<policy>/point_cloud.ply
+```
+
+Run it from the repository root:
+
+```powershell
+cd C:\GitHub\vid-to-3Drecons
+conda activate vid3d
+pip install -r requirements.txt
+cd viewer
+npm install
+npm run build
+cd ..
+python scripts/16_launch_demo_app.py --port 8088
+```
+
+Open:
+
+```text
+http://127.0.0.1:8088
+```
+
+The web UI intentionally stays small:
+
+- Load PLY directly from an upload or repo path.
+- Start the video demo with scene, policy, FPS, Gaussian Splatting iterations, and resolution.
+- View one large canvas with FPS room controls.
+- Fix axis issues interactively with Flip Y, Flip Z, Rotate X, Rotate Y, Reset Transform.
+- Save the current transform to `outputs/demo/<scene>_<policy>/viewer_settings.json`.
+
+The web pipeline no longer calls `scripts/05_run_hloc_colmap.py`. After frame selection it hands the selected images to GraphDECO Gaussian Splatting. GraphDECO `convert.py` still runs COLMAP internally to estimate camera poses, then `train.py` writes `point_cloud/iteration_<N>/point_cloud.ply`. The app copies that file to `outputs/demo/<scene>_<policy>/point_cloud.ply` and loads it in the same canvas.
+
+Run the selected-frames-to-Gaussian-PLY step directly:
+
+```powershell
+python scripts/18_selected_frames_to_gaussian_ply.py --scene r2 --policy medium_filter --iterations 7000 --resolution 4
+```
+
+Validate the video-to-PLY path. Add `--skip-train` when you only want to verify setup and reuse an existing trained PLY:
+
+```powershell
+python scripts/17_validate_video_to_ply.py --video data/raw_videos/r2.mp4 --scene r2 --policy medium_filter --fps 1 --iterations 7000 --resolution 4 --skip-train
+```
+
+Full 3DGS training is not realtime. For presentation, keep a trained/cached `point_cloud.ply` under `outputs/gaussian_splatting/<scene>_<policy>/model/point_cloud/iteration_<N>/` or `outputs/demo/<scene>_<policy>/point_cloud.ply` when you do not want to retrain.
+
+ViS-3DGS integration is optional: the app writes `outputs/demo/<scene>_<policy>/vis3dgs_target.json` pointing at the generated PLY and detects `C:\GitHub\ViS-3DGS-main` when present. The one-page app does not open SuperSplat, GaussianViewer, ViS-3DGS, or a VSCode extension as the main demo. It renders the selected PLY in the same canvas.
+
 ## Visual Demo Layer
 
-The visual demo layer packages trained 3DGS output for browser inspection after COLMAP poses are available. It is not part of the current quantitative report pipeline.
+The legacy visual demo scripts package trained 3DGS output for browser inspection after COLMAP poses are available. They are not the main demo path and are not part of the current quantitative report pipeline.
 
-Supported viewers:
+Legacy inspection viewers:
 
 - local web viewer in `viewer/`, using `@mkkellogg/gaussian-splats-3d`
 - SuperSplat Viewer static web app from `@playcanvas/supersplat-viewer`
 - ViS-3DGS in VSCode as an optional external inspection tool
 
-These tools are only used to view trained 3DGS results. The current project metrics remain COLMAP automatic_reconstructor metrics unless a separate trained 3DGS experiment is explicitly documented.
+These tools are only used to inspect trained 3DGS results outside the one-page demo. The current project metrics remain COLMAP automatic_reconstructor metrics unless a separate trained 3DGS experiment is explicitly documented.
 
 Install/build viewer assets:
 

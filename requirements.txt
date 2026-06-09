@@ -11,3 +11,6 @@ plyfile
 torch
 torchvision
 torchaudio
+fastapi
+uvicorn
+python-multipart
