@@ -20,7 +20,7 @@ Not yet implemented:
 - DUST3R
 - RIFE
 - TecoGAN
-- 3D Gaussian Splatting
+- 3D Gaussian Splatting training/evaluation as a reported result
 
 ## Technical Honesty Note
 
@@ -124,6 +124,9 @@ vid-to-3Drecons/
     09_export_report_assets.py
     10_run_all_colmap_policies.py
     11_prepare_3dgs_dataset.py
+    12_collect_3dgs_output.py
+    13_export_demo_assets.py
+    14_launch_demo.py
   src/
     frame_quality/
     reconstruction/
@@ -265,6 +268,53 @@ Suggested 3DGS command:
 ```powershell
 python train.py -s C:\GitHub\vid-to-3Drecons\data\3dgs\scene01_light -m output\scene01_light_3dgs_7k --iterations 7000 --resolution 2
 ```
+
+## Visual Demo Layer
+
+The visual demo layer packages trained 3DGS output for browser inspection after COLMAP poses are available. It is not part of the current quantitative report pipeline.
+
+Supported viewers:
+
+- local web viewer in `viewer/`, using `@mkkellogg/gaussian-splats-3d`
+- SuperSplat Viewer static web app from `@playcanvas/supersplat-viewer`
+- ViS-3DGS in VSCode as an optional external inspection tool
+
+These tools are only used to view trained 3DGS results. The current project metrics remain COLMAP automatic_reconstructor metrics unless a separate trained 3DGS experiment is explicitly documented.
+
+Install/build viewer assets:
+
+```powershell
+cd viewer
+npm install
+npm run build
+cd ..
+```
+
+Collect trained 3DGS output:
+
+```powershell
+python scripts/12_collect_3dgs_output.py --scene scene01 --policy light_filter --model-dir <path-to-gaussian-splatting>\output\scene01_light_3dgs_7k --iteration 7000
+```
+
+Export demo assets:
+
+```powershell
+python scripts/13_export_demo_assets.py --scene scene01 --policy light_filter
+```
+
+Launch the local viewer:
+
+```powershell
+python scripts/14_launch_demo.py --scene scene01 --policy light_filter
+```
+
+Launch SuperSplat Viewer:
+
+```powershell
+python scripts/14_launch_demo.py --scene scene01 --policy light_filter --viewer supersplat
+```
+
+See [docs/DEMO_3DGS_VIEWER.md](docs/DEMO_3DGS_VIEWER.md) for the full demo workflow.
 
 ## Frame Quality Metrics
 

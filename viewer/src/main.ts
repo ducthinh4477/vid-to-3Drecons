@@ -26,12 +26,50 @@ type ViewerScene = {
     point_cloud_mode?: boolean;
     preview_points?: boolean;
   };
+  demo?: DemoInfo;
+};
+
+type DemoInfo = {
+  scene?: string;
+  policy?: string;
+  metrics?: DemoMetrics;
+  thumbnails?: string[];
+  supersplat_url?: string;
+  local_viewer_url?: string;
+};
+
+type DemoMetrics = {
+  selected_frames?: number | null;
+  registered_images?: number | null;
+  sparse_points?: number | null;
+  dense_points?: number | null;
+  reprojection_error_px?: number | null;
+  registered_ratio?: number | null;
+};
+
+type DemoManifest = {
+  kind?: string;
+  scene?: string;
+  policy?: string;
+  viewer_scene?: string;
+  splat_file?: string;
+  metrics_file?: string | null;
+  metrics_summary?: DemoMetrics;
+  thumbnails?: string[];
+  supersplat_viewer?: string;
+  local_viewer?: string;
 };
 
 type PreviewPoints = {
   count: number;
   positions: number[];
   colors: number[];
+};
+
+type LoadedScene = {
+  scene: ViewerScene;
+  sourceUrl: string;
+  manifest?: DemoManifest;
 };
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -64,7 +102,12 @@ function getBooleanParam(name: string): boolean | null {
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }
 
-async function loadScene(): Promise<ViewerScene> {
+function resolveUrl(path: string | undefined, baseUrl: string): string | undefined {
+  if (!path) return undefined;
+  return new URL(path, baseUrl).toString();
+}
+
+async function loadScene(): Promise<LoadedScene> {
   const params = new URLSearchParams(window.location.search);
   const sceneUrl = params.get('scene');
   if (!sceneUrl) {
@@ -74,7 +117,29 @@ async function loadScene(): Promise<ViewerScene> {
   if (!response.ok) {
     throw new Error(`Could not load scene JSON (${response.status}).`);
   }
-  return (await response.json()) as ViewerScene;
+  const data = await response.json() as ViewerScene | DemoManifest;
+  const sourceUrl = response.url;
+  if ('viewer_scene' in data && data.viewer_scene) {
+    const manifest = data as DemoManifest;
+    const viewerSceneUrl = resolveUrl(manifest.viewer_scene, sourceUrl);
+    if (!viewerSceneUrl) throw new Error('Demo manifest does not contain a viewer scene.');
+    const viewerSceneResponse = await fetch(viewerSceneUrl);
+    if (!viewerSceneResponse.ok) {
+      throw new Error(`Could not load viewer scene JSON (${viewerSceneResponse.status}).`);
+    }
+    const viewerScene = await viewerSceneResponse.json() as ViewerScene;
+    viewerScene.demo = {
+      scene: manifest.scene,
+      policy: manifest.policy,
+      metrics: manifest.metrics_summary,
+      thumbnails: manifest.thumbnails,
+      supersplat_url: manifest.supersplat_viewer,
+      local_viewer_url: manifest.local_viewer,
+      ...viewerScene.demo
+    };
+    return { scene: viewerScene, sourceUrl: viewerSceneResponse.url, manifest };
+  }
+  return { scene: data as ViewerScene, sourceUrl };
 }
 
 function resize(renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera): void {
@@ -196,9 +261,74 @@ function createControlPanel(): HTMLElement {
   return panel;
 }
 
+function formatMetric(value: number | null | undefined, digits = 0): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+  return digits > 0 ? value.toFixed(digits) : Math.round(value).toLocaleString();
+}
+
+function addMetric(panel: HTMLElement, label: string, value: string): void {
+  const row = document.createElement('div');
+  row.className = 'metric-row';
+  const key = document.createElement('span');
+  const val = document.createElement('strong');
+  key.textContent = label;
+  val.textContent = value;
+  row.append(key, val);
+  panel.append(row);
+}
+
+function createDemoPanel(scene: ViewerScene, sourceUrl: string): HTMLElement | null {
+  const demo = scene.demo;
+  if (!demo) return null;
+
+  const panel = document.createElement('aside');
+  panel.className = 'demo-panel';
+  const title = document.createElement('div');
+  title.className = 'demo-title';
+  title.textContent = demo.scene || '3DGS Demo';
+  const subtitle = document.createElement('div');
+  subtitle.className = 'demo-subtitle';
+  subtitle.textContent = demo.policy ? `Policy: ${demo.policy}` : 'Visual demo layer';
+  panel.append(title, subtitle);
+
+  const metrics = demo.metrics || {};
+  addMetric(panel, 'Selected frames', formatMetric(metrics.selected_frames));
+  addMetric(panel, 'Registered images', formatMetric(metrics.registered_images));
+  addMetric(panel, 'Sparse points', formatMetric(metrics.sparse_points));
+  addMetric(panel, 'Dense points', formatMetric(metrics.dense_points));
+  addMetric(panel, 'Reproj. error', formatMetric(metrics.reprojection_error_px, 3));
+
+  const actions = document.createElement('div');
+  actions.className = 'demo-actions';
+  const superSplatButton = document.createElement('button');
+  superSplatButton.type = 'button';
+  superSplatButton.textContent = 'Open SuperSplat';
+  superSplatButton.addEventListener('click', () => {
+    const url = resolveUrl(demo.supersplat_url, sourceUrl);
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+  });
+
+  const localButton = document.createElement('button');
+  localButton.type = 'button';
+  localButton.textContent = 'Open local viewer';
+  localButton.addEventListener('click', () => {
+    const url = resolveUrl(demo.local_viewer_url, sourceUrl);
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+  });
+  actions.append(superSplatButton, localButton);
+  panel.append(actions);
+
+  const controls = document.createElement('div');
+  controls.className = 'demo-help';
+  controls.textContent = 'WASD/arrows move, Space up, Left Alt down, Shift slow, mouse look after click.';
+  panel.append(controls);
+  return panel;
+}
+
 async function start(): Promise<void> {
-  const scene = await loadScene();
-  const splatUrl = scene.splat_url || scene.splat;
+  const loaded = await loadScene();
+  const scene = loaded.scene;
+  const splatUrl = resolveUrl(scene.splat_url || scene.splat, loaded.sourceUrl);
   if (!splatUrl) throw new Error('Scene JSON does not contain a splat URL.');
 
   const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
@@ -215,7 +345,7 @@ async function start(): Promise<void> {
   camera.position.set(...scene.camera.position);
 
   const referenceScene = createReferenceScene(scene.bounds);
-  const previewPoints = await addPreviewPoints(scene.preview_points_url, referenceScene, scene.bounds);
+  const previewPoints = await addPreviewPoints(resolveUrl(scene.preview_points_url, loaded.sourceUrl), referenceScene, scene.bounds);
   const previewEnabled = getBooleanParam('preview') ?? scene.render?.preview_points ?? false;
   if (previewPoints) previewPoints.visible = previewEnabled;
 
@@ -293,6 +423,8 @@ async function start(): Promise<void> {
     }));
   }
   root.append(panel);
+  const demoPanel = createDemoPanel(scene, loaded.sourceUrl);
+  if (demoPanel) root.append(demoPanel);
 
   setStatus(
     splatCount ? `Loaded ${splatCount.toLocaleString()} splats. Click the view to move.` : 'Scene loaded. Click the view to move.',

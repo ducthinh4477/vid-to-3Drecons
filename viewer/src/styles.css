@@ -31,7 +31,7 @@ body,
 .status {
   position: fixed;
   left: 16px;
-  top: 14px;
+  bottom: 14px;
   max-width: min(420px, calc(100vw - 32px));
   padding: 8px 10px;
   border-radius: 6px;
@@ -101,4 +101,69 @@ body,
 
 .toggle-row input {
   accent-color: #6fc6ff;
+}
+
+.demo-panel {
+  position: fixed;
+  left: 16px;
+  top: 14px;
+  width: min(330px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid rgba(159, 183, 201, 0.28);
+  border-radius: 6px;
+  background: rgba(8, 12, 15, 0.8);
+  color: #f4f7fb;
+  display: grid;
+  gap: 7px;
+  backdrop-filter: blur(10px);
+}
+
+.demo-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.demo-subtitle,
+.demo-help {
+  color: #b7c5ce;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.metric-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.metric-row span {
+  color: #c9d6df;
+}
+
+.metric-row strong {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.demo-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 3px;
+}
+
+.demo-actions button {
+  min-height: 30px;
+  border: 1px solid rgba(111, 198, 255, 0.45);
+  border-radius: 6px;
+  background: rgba(28, 44, 55, 0.88);
+  color: #f4f7fb;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.demo-actions button:hover {
+  background: rgba(42, 67, 84, 0.92);
 }
