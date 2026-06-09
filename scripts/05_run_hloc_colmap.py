@@ -84,19 +84,32 @@ def main() -> int:
     print(f"Workspace: {args.workspace}")
     print("Running COLMAP automatic_reconstructor...")
 
-    result = subprocess.run(command, capture_output=True, text=True)
     with log_path.open("w", encoding="utf-8") as f:
         f.write("Command:\n")
         f.write(subprocess.list2cmdline(command))
-        f.write("\n\nSTDOUT:\n")
-        f.write(result.stdout)
-        f.write("\n\nSTDERR:\n")
-        f.write(result.stderr)
+        f.write("\n\nOUTPUT:\n")
+        f.flush()
+
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        assert process.stdout is not None
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            f.write(line)
+            f.flush()
+        return_code = process.wait()
 
     print(f"Saved COLMAP log: {log_path}")
-    if result.returncode != 0:
-        print(f"Error: COLMAP failed with exit code {result.returncode}.")
-        return result.returncode
+    if return_code != 0:
+        print(f"Error: COLMAP failed with exit code {return_code}.")
+        return return_code
 
     print("COLMAP reconstruction finished successfully.")
     return 0

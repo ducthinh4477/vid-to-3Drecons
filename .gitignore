@@ -19,9 +19,18 @@ data/raw_videos/*
 data/frames_raw/*
 data/frames_selected/*
 data/masks/*
+data/3dgs/*
+data/demo_uploads/*
 
 # Outputs
 outputs/*
+
+# Third-party checkouts
+third_party/speedy-splat/
+
+# Viewer build/runtime
+viewer/node_modules/
+viewer/dist/
 
 # Large files
 *.mp4
@@ -29,6 +38,9 @@ outputs/*
 *.avi
 *.mkv
 *.ply
+*.splat
+*.ksplat
+*.compressed.ply
 *.bin
 *.h5
 *.db
@@ -37,12 +49,35 @@ outputs/*
 *.ckpt
 
 # Keep folders
+!data/raw_videos/
 !data/raw_videos/.gitkeep
+!data/frames_raw/
 !data/frames_raw/.gitkeep
+!data/frames_selected/
 !data/frames_selected/.gitkeep
+!data/masks/
 !data/masks/.gitkeep
+!data/3dgs/
+!data/3dgs/.gitkeep
+!data/demo_uploads/
+!data/demo_uploads/.gitkeep
+!outputs/frame_quality/
+outputs/frame_quality/*
 !outputs/frame_quality/.gitkeep
+!outputs/reconstructions/
+outputs/reconstructions/*
 !outputs/reconstructions/.gitkeep
+!outputs/comparisons/
+outputs/comparisons/*
 !outputs/comparisons/.gitkeep
+!outputs/figures/
+outputs/figures/*
 !outputs/figures/.gitkeep
+!outputs/reports/
+outputs/reports/*
 !outputs/reports/.gitkeep
+!outputs/3dgs/
+outputs/3dgs/*
+!outputs/3dgs/.gitkeep
+!third_party/
+!third_party/.gitkeep

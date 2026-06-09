@@ -1,0 +1,20 @@
+{
+  "name": "vid-to-3drecons-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mkkellogg/gaussian-splats-3d": "^0.4.7",
+    "three": "^0.165.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.165.0",
+    "typescript": "^5.4.5",
+    "vite": "^5.4.0"
+  }
+}

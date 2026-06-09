@@ -123,6 +123,7 @@ vid-to-3Drecons/
     08_compare_experiments.py
     09_export_report_assets.py
     10_run_all_colmap_policies.py
+    11_prepare_3dgs_dataset.py
   src/
     frame_quality/
     reconstruction/
@@ -229,6 +230,41 @@ outputs/figures/scene01_dense_points_by_policy.png
 - `light_filter` reduces the input from 635 to 508 frames while keeping strong reconstruction quality.
 - `medium_filter` and `strong_filter` produce higher-quality selected frames but reduce coverage and model completeness because they remove too many intermediate views.
 - This supports the main Image Processing contribution: frame quality assessment and filtering can reduce redundancy, but filtering must preserve geometric overlap.
+
+## Prepare Dataset for 3D Gaussian Splatting
+
+3D Gaussian Splatting is an optional visualization/demo stage after COLMAP. The current COLMAP result uses COLMAP automatic_reconstructor with built-in SIFT, not hloc/SuperPoint/LightGlue.
+
+3DGS expects an undistorted COLMAP dataset with `PINHOLE` or `SIMPLE_PINHOLE` cameras. For this reason, the preparation script uses `outputs/reconstructions/<scene>/<policy>/colmap/dense/0/images` and `outputs/reconstructions/<scene>/<policy>/colmap/dense/0/sparse` when they exist. These are the undistorted images and sparse model produced by COLMAP.
+
+Prepare the `light_filter` dataset for manual 3DGS training:
+
+```powershell
+python scripts/11_prepare_3dgs_dataset.py --scene scene01 --policy light_filter --out data/3dgs/scene01_light --overwrite
+```
+
+Expected output folder:
+
+```text
+data/3dgs/scene01_light/
+  images/
+    frame_000001.jpg
+    frame_000002.jpg
+    ...
+  sparse/
+    0/
+      cameras.bin
+      images.bin
+      points3D.bin
+      rigs.bin
+      frames.bin
+```
+
+Suggested 3DGS command:
+
+```powershell
+python train.py -s C:\GitHub\vid-to-3Drecons\data\3dgs\scene01_light -m output\scene01_light_3dgs_7k --iterations 7000 --resolution 2
+```
 
 ## Frame Quality Metrics
 

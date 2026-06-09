@@ -7,6 +7,7 @@ tqdm
 pyyaml
 rich
 h5py
+plyfile
 torch
 torchvision
 torchaudio

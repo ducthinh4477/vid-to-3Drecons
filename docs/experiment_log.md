@@ -66,6 +66,19 @@ Ghi chú: `Images in Model` là số ảnh nằm trong sparse model tốt nhất
 - `medium_filter` and `strong_filter` produce higher-quality selected frames but reduce coverage and model completeness because they remove too many intermediate views.
 - This supports the main Image Processing contribution: frame quality assessment and filtering can reduce redundancy, but filtering must preserve geometric overlap.
 
+## 3DGS Demo
+
+* Source scene:
+* Source policy:
+* Source images:
+* Source sparse model:
+* Prepared dataset:
+* 3DGS iterations:
+* Resolution setting:
+* Output model path:
+* Visual result:
+* Notes:
+
 ## Planned Future Extensions
 
 ### TODO Phase 4 hloc Integration
