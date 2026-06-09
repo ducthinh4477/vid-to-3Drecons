@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import os
 import queue
-import shutil
 import subprocess
 import sys
 import threading
@@ -13,7 +11,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from src.reconstruction.colmap_utils import count_ply_vertices
 from web.backend.artifact_service import (
     IMAGE_EXTENSIONS,
     VIDEO_EXTENSIONS,
@@ -25,10 +22,21 @@ from web.backend.artifact_service import (
     sample_evenly,
     write_json,
 )
-from web.backend.colmap_exporter import export_colmap_preview
+from web.backend.gaussian_bridge import (
+    collect_point_cloud,
+    gaussian_paths,
+    has_converted_dataset,
+    has_trained_point_cloud,
+    prepare_dataset_from_selected_frames,
+    resolve_gaussian_root,
+    resolve_vis_root,
+    run_subprocess_stream,
+    run_convert_with_fallback,
+    train_command,
+    validate_external_repos,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
-Mode = Literal["instant", "cached", "preview"]
 StepStatus = Literal["idle", "running", "done", "error", "skipped", "available", "missing"]
 
 
@@ -37,10 +45,9 @@ class DemoRequest:
     video_path: str
     scene: str
     policy: str
-    mode: Mode = "instant"
     fps: float = 5.0
     quality: str = "medium"
-    iterations: int = 1500
+    iterations: int = 7000
     resolution: int = 4
 
 
@@ -95,7 +102,7 @@ class PipelineRunner:
         self.lock = threading.Lock()
 
     def start(self, request: DemoRequest) -> Job:
-        job = Job(id=uuid.uuid4().hex[:10], request=request, steps=_default_steps(request.mode))
+        job = Job(id=uuid.uuid4().hex[:10], request=request, steps=_default_steps())
         with self.lock:
             self.jobs[job.id] = job
         threading.Thread(target=self._run_job, args=(job,), daemon=True).start()
@@ -120,17 +127,16 @@ class PipelineRunner:
             job.emit()
 
 
-def _default_steps(mode: Mode) -> list[Step]:
+def _default_steps() -> list[Step]:
     labels = [
         ("extract_frames", "Step 1 Extract frames"),
         ("quality_scoring", "Step 2 Quality scoring"),
         ("frame_selection", "Step 3 Frame selection"),
-        ("colmap", "Step 4 COLMAP SIFT baseline"),
-        ("preview", "Step 5 3D preview"),
-        ("cached_3dgs", "Step 6 3DGS cached model"),
+        ("gs_dataset", "Step 4 Prepare Gaussian dataset"),
+        ("gs_convert", "Step 5 GraphDECO convert.py"),
+        ("gs_train", "Step 6 GraphDECO train.py"),
+        ("vis3dgs", "Step 7 PLY ready for ViS-3DGS"),
     ]
-    if mode == "preview":
-        labels.append(("preview_3dgs", "Step 7 3DGS preview training"))
     return [Step(name=name, label=label) for name, label in labels]
 
 
@@ -147,8 +153,9 @@ def run_pipeline(job: Job) -> None:
     frames_raw = ROOT / "data" / "frames_raw" / scene
     quality_csv = ROOT / "outputs" / "frame_quality" / scene / "frame_quality.csv"
     selected_dir = ROOT / "data" / "frames_selected" / scene / policy
-    workspace = ROOT / "outputs" / "reconstructions" / scene / policy / "colmap"
-    metrics_json = ROOT / "outputs" / "reconstructions" / scene / policy / "metrics.json"
+    gaussian_root = resolve_gaussian_root()
+    vis_root = resolve_vis_root()
+    gs_paths = gaussian_paths(scene, policy)
 
     _run_or_skip(
         job,
@@ -194,58 +201,52 @@ def run_pipeline(job: Job) -> None:
         ],
     )
 
-    colmap_ready = _workspace_has_colmap(workspace)
-    _run_or_skip(
-        job,
-        "colmap",
-        colmap_ready,
-        f"Using cached COLMAP workspace {project_rel(workspace)}",
-        [
-            sys.executable,
-            "scripts/05_run_hloc_colmap.py",
-            "--scene",
-            scene,
-            "--policy",
-            policy,
-            "--images",
-            str(selected_dir),
-            "--workspace",
-            str(workspace),
-            "--quality",
-            request.quality,
-            "--camera-model",
-            "SIMPLE_RADIAL",
-            "--single-camera",
-            "1",
-        ],
-    )
+    validate_external_repos(gaussian_root, vis_root)
+    _set_step(job, "gs_dataset", "running", "Copying selected frames into Gaussian Splatting dataset/input.")
+    frame_count = prepare_dataset_from_selected_frames(selected_dir, gs_paths)
+    _set_step(job, "gs_dataset", "done", f"Prepared {frame_count} selected frames at {project_rel(gs_paths.input_dir)}.")
 
-    _run_optional_evaluate(job, scene, policy, workspace, metrics_json)
-    _set_step(job, "preview", "running", "Exporting COLMAP preview artifact.")
-    preview_result = export_colmap_preview(scene, policy)
-    _set_step(job, "preview", "done", f"Preview points: {preview_result.get('point_count') or 0}")
+    if has_converted_dataset(gs_paths.dataset_dir):
+        _set_step(job, "gs_convert", "done", f"Using cached Gaussian dataset {project_rel(gs_paths.dataset_dir)}.")
+        job.log(f"Using cached Gaussian dataset {project_rel(gs_paths.dataset_dir)}")
+    else:
+        _set_step(job, "gs_convert", "running", "Running gaussian-splatting convert.py. This runs COLMAP feature matching and mapper inside GraphDECO.")
+        code = run_convert_with_fallback(gaussian_root, gs_paths.dataset_dir, job.log)
+        if code != 0:
+            raise RuntimeError(f"gaussian-splatting convert.py failed with exit code {code}")
+        _set_step(job, "gs_convert", "done", "Gaussian Splatting dataset converted.")
 
-    preview_message = None
-    if request.mode == "preview":
-        preview_message = _run_preview_training(job, scene, policy, request.iterations, request.resolution)
+    if has_trained_point_cloud(gs_paths.model_dir, request.iterations):
+        _set_step(job, "gs_train", "done", f"Using cached Gaussian Splatting model at {project_rel(gs_paths.model_dir)}.")
+        job.log(f"Using cached Gaussian Splatting model {project_rel(gs_paths.model_dir)}")
+    else:
+        _set_step(job, "gs_train", "running", f"Training Gaussian Splatting for {request.iterations} iterations.")
+        code = run_subprocess_stream(
+            train_command(gaussian_root, gs_paths.dataset_dir, gs_paths.model_dir, request.iterations, request.resolution),
+            gaussian_root,
+            job.log,
+        )
+        if code != 0:
+            raise RuntimeError(f"gaussian-splatting train.py failed with exit code {code}")
+        _set_step(job, "gs_train", "done", "Gaussian Splatting training finished.")
+
+    result = collect_point_cloud(scene, policy, gs_paths, vis_root, gaussian_root)
+    vis_message = f"PLY ready: {project_rel(result.output_ply)}"
+    if vis_root:
+        vis_message += f" | ViS-3DGS repo detected at {vis_root}"
+    else:
+        vis_message += " | ViS-3DGS repo not found; web viewer still loads the PLY."
+    _set_step(job, "vis3dgs", "done", vis_message)
 
     manifest = generate_manifest(
         scene=scene,
         policy=policy,
-        mode=request.mode,
         video=video,
         quality_csv=quality_csv,
         selected_dir=selected_dir,
-        workspace=workspace,
-        metrics_json=metrics_json,
-        preview_result=preview_result,
-        preview_message=preview_message,
+        gaussian_result=result,
+        preview_message="Loaded Gaussian Splatting point_cloud.ply generated from selected frames.",
     )
-    manifest_data = read_json(manifest)
-    if manifest_data.get("status", {}).get("has_3dgs_cached"):
-        _set_step(job, "cached_3dgs", "available", "3DGS cached model available.")
-    else:
-        _set_step(job, "cached_3dgs", "missing", "3DGS cached model not found, showing COLMAP preview.")
     job.artifact_manifest = f"/api/artifacts/{scene}/{policy}/manifest"
     job.log(f"Manifest: {project_rel(manifest)}")
 
@@ -272,104 +273,36 @@ def _run_optional_evaluate(job: Job, scene: str, policy: str, workspace: Path, m
     _run_background_metric_command(job, command)
 
 
-def _run_preview_training(job: Job, scene: str, policy: str, iterations: int, resolution: int) -> str | None:
-    _set_step(job, "preview_3dgs", "running", "Preparing 3DGS preview dataset.")
-    dataset = ROOT / "data" / "3dgs" / f"{scene}_{policy.removesuffix('_filter') if policy.endswith('_filter') else policy}"
-    code = _run_command(
-        job,
-        "preview_3dgs",
-        [sys.executable, "scripts/11_prepare_3dgs_dataset.py", "--scene", scene, "--policy", policy, "--out", str(dataset), "--overwrite"],
-        optional=True,
-    )
-    if code != 0:
-        _set_step(job, "preview_3dgs", "error", "Could not prepare 3DGS dataset; showing COLMAP preview.")
-        return "3DGS preview dataset preparation failed, showing COLMAP preview."
-
-    gaussian_root = os.environ.get("GAUSSIAN_SPLATTING_PATH")
-    if not gaussian_root:
-        message = "GAUSSIAN_SPLATTING_PATH is not configured; showing COLMAP preview."
-        _set_step(job, "preview_3dgs", "error", message)
-        job.log(message)
-        return message
-
-    train_py = Path(gaussian_root) / "train.py"
-    if not train_py.exists():
-        message = f"train.py not found under GAUSSIAN_SPLATTING_PATH={gaussian_root}; showing COLMAP preview."
-        _set_step(job, "preview_3dgs", "error", message)
-        job.log(message)
-        return message
-
-    model_dir = ROOT / "outputs" / "3dgs" / f"{scene}_{policy}_preview"
-    code = _run_command(
-        job,
-        "preview_3dgs",
-        [
-            sys.executable,
-            str(train_py),
-            "-s",
-            str(dataset),
-            "-m",
-            str(model_dir),
-            "--iterations",
-            str(iterations),
-            "--resolution",
-            str(resolution),
-        ],
-        cwd=Path(gaussian_root),
-        optional=True,
-    )
-    if code != 0:
-        _set_step(job, "preview_3dgs", "error", "3DGS preview training failed; showing COLMAP preview.")
-        return "3DGS preview training failed, showing COLMAP preview."
-
-    source = model_dir / "point_cloud" / f"iteration_{iterations}" / "point_cloud.ply"
-    target = ROOT / "outputs" / "demo" / f"{scene}_{policy}" / "point_cloud_3dgs_preview.ply"
-    if source.exists():
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
-        _set_step(job, "preview_3dgs", "done", f"Preview model ready: {project_rel(target)}")
-        return None
-    _set_step(job, "preview_3dgs", "error", "Training finished but point_cloud.ply was not found.")
-    return "3DGS preview output was not found, showing COLMAP preview."
-
-
 def generate_manifest(
     scene: str,
     policy: str,
-    mode: Mode,
     video: Path,
     quality_csv: Path,
     selected_dir: Path,
-    workspace: Path,
-    metrics_json: Path,
-    preview_result: dict,
+    gaussian_result,
     preview_message: str | None,
 ) -> Path:
     demo_dir = ROOT / "outputs" / "demo" / f"{scene}_{policy}"
     demo_dir.mkdir(parents=True, exist_ok=True)
-    cached_asset = _find_3dgs_cache(demo_dir)
-    preview_ply = preview_result.get("preview_ply")
-    preview_json = preview_result.get("preview_points_json")
 
-    active_asset = cached_asset if cached_asset and mode in {"cached", "preview"} else preview_ply or preview_json
-    active_type = _asset_type(active_asset, cached_asset is not None and active_asset == cached_asset)
-    has_3dgs_cached = cached_asset is not None
-    if mode == "cached" and not has_3dgs_cached:
-        preview_message = "3DGS cached model not found, showing COLMAP preview."
-
-    metrics = _metrics_summary(metrics_json)
+    active_asset = gaussian_result.output_ply
+    active_type = _asset_type(active_asset, True)
     thumbnails = [
         {"path": project_rel(path), "url": artifact_url(path), "name": path.name}
         for path in sample_evenly(list_media_files(selected_dir, IMAGE_EXTENSIONS), 18)
     ]
-    bounds = preview_result.get("bounds") or {"min": [-1, -1, -1], "max": [1, 1, 1]}
+    bounds = {"min": [-1, -1, -1], "max": [1, 1, 1]}
     manifest = {
         "version": 1,
         "scene": scene,
         "policy": policy,
-        "mode": mode,
+        "mode": "video_to_gaussian_splatting_ply",
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "technical_note": "COLMAP automatic_reconstructor with SIFT is used. 3DGS model is loaded from cache if available.",
+        "technical_note": (
+            "This path extracts and selects frames in vid-to-3Drecons, then calls GraphDECO gaussian-splatting "
+            "convert.py and train.py to produce point_cloud.ply. convert.py runs COLMAP internally for poses; "
+            "scripts/05_run_hloc_colmap.py is not used by this web pipeline."
+        ),
         "message": preview_message,
         "video": {"path": project_rel(video), "url": artifact_url(video)},
         "frames": {
@@ -383,28 +316,43 @@ def generate_manifest(
             "url": artifact_url(quality_csv) if quality_csv.exists() else None,
             "summary": read_quality_summary(quality_csv),
         },
+        "gaussian_splatting": {
+            "dataset_dir": project_rel(gaussian_result.dataset_dir),
+            "model_dir": project_rel(gaussian_result.model_dir),
+            "source_ply": str(gaussian_result.source_ply),
+            "output_ply": project_rel(gaussian_result.output_ply),
+            "output_ply_url": artifact_url(gaussian_result.output_ply),
+            "iteration": gaussian_result.iteration,
+        },
+        "vis3dgs": {
+            "repo": str(gaussian_result.vis_root) if gaussian_result.vis_root else None,
+            "target_manifest": project_rel(gaussian_result.vis_manifest),
+            "note": "ViS-3DGS is optional external inspection for the generated PLY; the one-page web app stays self-contained.",
+        },
         "colmap": {
-            "workspace": project_rel(workspace),
-            "metrics_json": project_rel(metrics_json) if metrics_json.exists() else None,
-            "metrics_summary": metrics,
-            "preview_ply": project_rel(preview_ply) if preview_ply else None,
-            "preview_points_json": project_rel(preview_json) if preview_json else None,
-            "preview_ply_url": artifact_url(preview_ply) if preview_ply else None,
-            "preview_points_url": artifact_url(preview_json) if preview_json else None,
+            "workspace": None,
+            "metrics_json": None,
+            "metrics_summary": _empty_metrics_summary(),
+            "preview_ply": None,
+            "preview_points_json": None,
+            "preview_ply_url": None,
+            "preview_points_url": None,
+            "note": "Legacy COLMAP preview is disabled for this path. GraphDECO convert.py performs its own COLMAP pose stage.",
         },
         "viewer": {
             "active_type": active_type,
             "active_asset": project_rel(active_asset) if active_asset else None,
             "active_url": artifact_url(active_asset) if active_asset else None,
-            "fallback_asset": project_rel(preview_ply or preview_json) if (preview_ply or preview_json) else None,
-            "fallback_url": artifact_url(preview_ply or preview_json) if (preview_ply or preview_json) else None,
+            "fallback_asset": None,
+            "fallback_url": None,
             "camera": {"position": [0, 1, 3], "look_at": [0, 0, 0], "fov": 60},
             "bounds": bounds,
         },
         "status": {
-            "has_colmap_preview": bool(preview_ply or preview_json),
-            "has_3dgs_cached": has_3dgs_cached,
-            "has_3dgs_preview": (demo_dir / "point_cloud_3dgs_preview.ply").exists(),
+            "has_colmap_preview": False,
+            "has_3dgs_cached": False,
+            "has_3dgs_preview": True,
+            "has_gaussian_point_cloud": active_asset.exists() if active_asset else False,
         },
     }
     manifest_path = demo_dir / "demo_manifest.json"
@@ -443,13 +391,7 @@ def _asset_type(path: Path | None, is_splat: bool) -> str:
 
 def _metrics_summary(metrics_json: Path) -> dict:
     if not metrics_json.exists():
-        return {
-            "registered_images": None,
-            "sparse_points": None,
-            "dense_points": None,
-            "reprojection_error_px": None,
-            "registered_ratio": None,
-        }
+        return _empty_metrics_summary()
     data = read_json(metrics_json)
     best = data.get("best_sparse_model") or {}
     return {
@@ -458,6 +400,16 @@ def _metrics_summary(metrics_json: Path) -> dict:
         "dense_points": data.get("dense_fused_points"),
         "reprojection_error_px": best.get("mean_reprojection_error_px"),
         "registered_ratio": best.get("registered_ratio"),
+    }
+
+
+def _empty_metrics_summary() -> dict:
+    return {
+        "registered_images": None,
+        "sparse_points": None,
+        "dense_points": None,
+        "reprojection_error_px": None,
+        "registered_ratio": None,
     }
 
 

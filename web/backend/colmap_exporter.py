@@ -20,7 +20,8 @@ def export_colmap_preview(scene: str, policy: str) -> dict:
 
     fused = workspace / "dense" / "0" / "fused.ply"
     if fused.exists():
-        shutil.copy2(fused, preview_ply)
+        if not preview_ply.exists():
+            shutil.copy2(fused, preview_ply)
         preview = _ply_to_preview_json(preview_ply, preview_json)
         return {
             "preview_ply": preview_ply,

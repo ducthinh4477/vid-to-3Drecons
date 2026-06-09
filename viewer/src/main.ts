@@ -1,4 +1,4 @@
-import { App } from './components/App';
+import { App } from './App';
 import './styles.css';
 
 const root = document.querySelector<HTMLElement>('#app');

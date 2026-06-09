@@ -4,13 +4,13 @@ import asyncio
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from web.backend.artifact_service import ROOT, VIDEO_EXTENSIONS, list_media_files, read_json, serve_artifact
+from web.backend.artifact_service import ROOT, VIDEO_EXTENSIONS, inspect_ply, list_media_files, read_json, serve_artifact, upload_ply, write_json
 from web.backend.pipeline_runner import DemoRequest, runner
 
 FRONTEND_DIST = ROOT / "viewer" / "dist"
@@ -20,11 +20,16 @@ class DemoStartBody(BaseModel):
     video_path: str = Field(..., min_length=1)
     scene: str = Field(default="scene01")
     policy: str = Field(default="light_filter")
-    mode: str = Field(default="instant")
     fps: float = Field(default=5.0, gt=0)
     quality: str = Field(default="medium")
-    iterations: int = Field(default=1500, ge=1)
+    iterations: int = Field(default=7000, ge=1)
     resolution: int = Field(default=4, ge=1)
+
+
+class ViewerSettingsBody(BaseModel):
+    scene: str
+    policy: str
+    transform: dict
 
 
 app = FastAPI(title="Vid-to-3D Reconstruction Demo")
@@ -79,13 +84,10 @@ def scenes() -> dict:
 
 @app.post("/api/demo/start")
 def start_demo(body: DemoStartBody) -> dict:
-    if body.mode not in {"instant", "cached", "preview"}:
-        raise HTTPException(status_code=400, detail="mode must be instant, cached, or preview")
     request = DemoRequest(
         video_path=body.video_path,
         scene=body.scene,
         policy=body.policy,
-        mode=body.mode,  # type: ignore[arg-type]
         fps=body.fps,
         quality=body.quality,
         iterations=body.iterations,
@@ -134,6 +136,32 @@ def manifest(scene: str, policy: str) -> dict:
 @app.get("/api/artifacts/file", response_model=None)
 def file(path: str):
     return serve_artifact(path)
+
+
+@app.get("/api/file", response_model=None)
+def api_file(path: str):
+    return serve_artifact(path)
+
+
+@app.get("/api/ply/info")
+def ply_info(path: str) -> dict:
+    return inspect_ply(path)
+
+
+@app.post("/api/ply/upload")
+def ply_upload(file: UploadFile) -> dict:
+    return upload_ply(file)
+
+
+@app.post("/api/viewer/settings")
+def save_viewer_settings(body: ViewerSettingsBody) -> dict:
+    safe_scene = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in body.scene).strip("_")
+    safe_policy = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in body.policy).strip("_")
+    if not safe_scene or not safe_policy:
+        raise HTTPException(status_code=400, detail="Invalid scene or policy.")
+    path = ROOT / "outputs" / "demo" / f"{safe_scene}_{safe_policy}" / "viewer_settings.json"
+    write_json({"scene": safe_scene, "policy": safe_policy, "transform": body.transform}, path)
+    return {"status": "ok", "path": path.relative_to(ROOT).as_posix()}
 
 
 @app.get("/{path:path}", response_model=None)

@@ -1,4 +1,3 @@
-export type DemoMode = 'instant' | 'cached' | 'preview';
 export type Policy = 'no_filter' | 'light_filter' | 'medium_filter' | 'strong_filter';
 export type StepStatus = 'idle' | 'running' | 'done' | 'error' | 'skipped' | 'available' | 'missing';
 
@@ -29,7 +28,7 @@ export type Manifest = {
   version: number;
   scene: string;
   policy: Policy;
-  mode: DemoMode;
+  mode: string;
   created_at: string;
   technical_note: string;
   message?: string | null;
@@ -54,7 +53,7 @@ export type Manifest = {
     };
   };
   colmap: {
-    workspace: string;
+    workspace: string | null;
     metrics_json: string | null;
     metrics_summary: {
       registered_images?: number | null;
@@ -67,6 +66,20 @@ export type Manifest = {
     preview_points_json: string | null;
     preview_ply_url: string | null;
     preview_points_url: string | null;
+    note?: string;
+  };
+  gaussian_splatting?: {
+    dataset_dir: string;
+    model_dir: string;
+    source_ply: string;
+    output_ply: string;
+    output_ply_url: string | null;
+    iteration: number;
+  };
+  vis3dgs?: {
+    repo: string | null;
+    target_manifest: string;
+    note: string;
   };
   viewer: {
     active_type: 'splat' | 'pointcloud' | 'preview_points' | 'none';
@@ -81,18 +94,30 @@ export type Manifest = {
     has_colmap_preview: boolean;
     has_3dgs_cached: boolean;
     has_3dgs_preview: boolean;
+    has_gaussian_point_cloud?: boolean;
   };
+};
+
+export type PlyInfo = {
+  name: string;
+  path: string;
+  url: string;
+  format: string;
+  vertex_count: number;
+  properties: string[];
+  asset_type: 'gaussian_splat' | 'point_cloud' | 'unknown';
+  color: 'rgb' | 'f_dc' | 'none';
+  bounds: { min: [number, number, number]; max: [number, number, number] } | null;
 };
 
 export type StartRequest = {
   video_path: string;
   scene: string;
   policy: Policy;
-  mode: DemoMode;
   fps: number;
-  quality: string;
-  iterations: number;
-  resolution: number;
+  quality?: string;
+  iterations?: number;
+  resolution?: number;
 };
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -123,4 +148,25 @@ export async function getJob(jobId: string): Promise<JobStatus> {
 
 export async function getManifest(url: string): Promise<Manifest> {
   return requestJson(url);
+}
+
+export async function uploadPly(file: File): Promise<{ asset_url: string; path: string; name: string; type: string; ply: PlyInfo }> {
+  const form = new FormData();
+  form.append('file', file);
+  const response = await fetch('/api/ply/upload', { method: 'POST', body: form });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.detail || payload.error || 'PLY upload failed.');
+  return payload;
+}
+
+export async function getPlyInfo(path: string): Promise<PlyInfo> {
+  return requestJson(`/api/ply/info?path=${encodeURIComponent(path)}`);
+}
+
+export async function saveViewerSettings(scene: string, policy: string, transform: unknown): Promise<{ status: string; path: string }> {
+  return requestJson('/api/viewer/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scene, policy, transform })
+  });
 }

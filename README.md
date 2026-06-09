@@ -128,7 +128,11 @@ vid-to-3Drecons/
     13_export_demo_assets.py
     14_launch_demo.py
     15_export_colmap_preview.py
+    15_export_colmap_preview_ply.py
+    16_launch_demo_app.py
     16_run_web_demo.py
+    17_validate_video_to_ply.py
+    18_selected_frames_to_gaussian_ply.py
   src/
     frame_quality/
     reconstruction/
@@ -273,10 +277,15 @@ python train.py -s C:\GitHub\vid-to-3Drecons\data\3dgs\scene01_light -m output\s
 
 ## One-page Web Demo
 
-The main demo now runs the whole presentation flow in one local web app:
+The main demo is now PLY-first and runs in one local web app:
 
 ```text
-video -> frame filtering -> COLMAP SIFT preview -> cached 3DGS viewer when available
+load PLY directly
+or
+video -> extract frames -> quality scoring -> select frames
+      -> C:\GitHub\gaussian-splatting\convert.py
+      -> C:\GitHub\gaussian-splatting\train.py
+      -> outputs/demo/<scene>_<policy>/point_cloud.ply
 ```
 
 Run it from the repository root:
@@ -289,7 +298,7 @@ cd viewer
 npm install
 npm run build
 cd ..
-python scripts/16_run_web_demo.py --port 8088
+python scripts/16_launch_demo_app.py --port 8088
 ```
 
 Open:
@@ -298,15 +307,31 @@ Open:
 http://127.0.0.1:8088
 ```
 
-Demo modes:
+The web UI intentionally stays small:
 
-- `instant`: video -> frames -> quality -> selected frames -> COLMAP preview. It does not train 3DGS.
-- `cached`: runs or displays the same pipeline, then loads a cached 3DGS asset from `outputs/demo/<scene>_<policy>/` if present. If the cache is missing, the app says `3DGS cached model not found, showing COLMAP preview.`
-- `preview`: prepares the 3DGS dataset and tries a short training run using `GAUSSIAN_SPLATTING_PATH`. If that path is not configured, the app reports the problem clearly and falls back to COLMAP preview.
+- Load PLY directly from an upload or repo path.
+- Start the video demo with scene, policy, FPS, Gaussian Splatting iterations, and resolution.
+- View one large canvas with FPS room controls.
+- Fix axis issues interactively with Flip Y, Flip Z, Rotate X, Rotate Y, Reset Transform.
+- Save the current transform to `outputs/demo/<scene>_<policy>/viewer_settings.json`.
 
-Full 3DGS training is not realtime. For presentation, the app uses cached 3DGS results trained offline from the same scene, while COLMAP preview proves the video-to-3D pipeline is running.
+The web pipeline no longer calls `scripts/05_run_hloc_colmap.py`. After frame selection it hands the selected images to GraphDECO Gaussian Splatting. GraphDECO `convert.py` still runs COLMAP internally to estimate camera poses, then `train.py` writes `point_cloud/iteration_<N>/point_cloud.ply`. The app copies that file to `outputs/demo/<scene>_<policy>/point_cloud.ply` and loads it in the same canvas.
 
-The one-page app does not open SuperSplat, GaussianViewer, ViS-3DGS, or a VSCode extension as the main demo. It renders the selected 3D asset in the same canvas using Three.js and `@mkkellogg/gaussian-splats-3d` where a splat cache is available.
+Run the selected-frames-to-Gaussian-PLY step directly:
+
+```powershell
+python scripts/18_selected_frames_to_gaussian_ply.py --scene r2 --policy medium_filter --iterations 7000 --resolution 4
+```
+
+Validate the video-to-PLY path. Add `--skip-train` when you only want to verify setup and reuse an existing trained PLY:
+
+```powershell
+python scripts/17_validate_video_to_ply.py --video data/raw_videos/r2.mp4 --scene r2 --policy medium_filter --fps 1 --iterations 7000 --resolution 4 --skip-train
+```
+
+Full 3DGS training is not realtime. For presentation, keep a trained/cached `point_cloud.ply` under `outputs/gaussian_splatting/<scene>_<policy>/model/point_cloud/iteration_<N>/` or `outputs/demo/<scene>_<policy>/point_cloud.ply` when you do not want to retrain.
+
+ViS-3DGS integration is optional: the app writes `outputs/demo/<scene>_<policy>/vis3dgs_target.json` pointing at the generated PLY and detects `C:\GitHub\ViS-3DGS-main` when present. The one-page app does not open SuperSplat, GaussianViewer, ViS-3DGS, or a VSCode extension as the main demo. It renders the selected PLY in the same canvas.
 
 ## Visual Demo Layer
 

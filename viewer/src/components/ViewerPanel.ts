@@ -1,77 +1,101 @@
-import type { Manifest } from '../api';
+import type { PlyInfo } from '../api';
 import type { AppState } from '../state';
+import { inspectPlyAsset } from '../viewer/PlyAssetLoader';
 import { PointCloudViewer } from '../viewer/PointCloudViewer';
 import { SplatViewer } from '../viewer/SplatViewer';
 
-let activeViewer: PointCloudViewer | SplatViewer | null = null;
+type ViewerInstance = PointCloudViewer | SplatViewer;
+let activeViewer: ViewerInstance | null = null;
 let loadedKey = '';
+let activeKind: 'point_cloud' | 'gaussian_splat' | 'unknown' = 'unknown';
 
-export function renderViewerPanel(
-  state: AppState,
-  onResetReady: (reset: () => void) => void,
-  onToggleReferenceReady: (toggle: (visible: boolean) => void) => void
-): HTMLElement {
+export type ViewerActions = {
+  reset: () => void;
+  autoFit: () => void;
+  applyTransform: () => void;
+  setPointSize: (value: number) => void;
+  setSplatScale: (value: number) => void;
+  setMoveSpeed: (value: number) => void;
+  setLockToBounds: (value: boolean) => void;
+};
+
+export function renderViewerPanel(state: AppState, onActions: (actions: ViewerActions) => void, onLoaded: (info: PlyInfo | null, message: string) => void): HTMLElement {
   const panel = document.createElement('section');
   panel.className = 'viewer-panel';
   const canvasHost = document.createElement('div');
   canvasHost.className = 'viewer-canvas';
   const overlay = document.createElement('div');
   overlay.className = 'viewer-overlay';
-  overlay.textContent = overlayText(state.manifest);
-  panel.append(canvasHost, overlay);
+  overlay.textContent = state.activeAsset ? `Loading ${state.activeAsset.name}...` : 'Load a PLY or start the Gaussian PLY demo.';
+  const help = document.createElement('div');
+  help.className = 'viewer-help';
+  help.textContent = 'WASD / Arrows move - Mouse drag locks look - Space up - Alt/Ctrl down - Shift slow - R reset';
+  panel.append(canvasHost, overlay, help);
 
   requestAnimationFrame(() => {
-    const manifest = state.manifest;
-    const url = manifest?.viewer.active_url;
-    const type = manifest?.viewer.active_type;
-    const key = `${type}:${url}`;
-    if (!manifest || !url) return;
+    const asset = state.activeAsset;
+    if (!asset) return;
+    const key = `${asset.url}:${JSON.stringify(state.transform)}`;
     if (key === loadedKey && activeViewer) {
       canvasHost.append(activeViewer.renderer.domElement);
+      activeViewer.setMoveSpeed(state.moveSpeed);
+      activeViewer.setLockToBounds(state.lockToBounds);
       return;
     }
     loadedKey = key;
     activeViewer?.dispose();
     activeViewer = null;
-    loadViewer(canvasHost, manifest, overlay).catch((error: unknown) => {
-      overlay.textContent = error instanceof Error ? error.message : String(error);
+    loadAsset(canvasHost, overlay, state).then(({ info, message }) => onLoaded(info, message)).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      overlay.textContent = message;
+      onLoaded(null, message);
     });
-    onResetReady(() => activeViewer?.resetCamera());
-    onToggleReferenceReady((visible: boolean) => activeViewer?.setReferenceVisible(visible));
+    onActions({
+      reset: () => activeViewer?.resetCamera(),
+      autoFit: () => activeViewer?.autoFit(),
+      applyTransform: () => {
+        if (activeViewer) activeViewer.applyTransform(state.transform);
+      },
+      setPointSize: (value: number) => {
+        if (activeViewer instanceof PointCloudViewer) activeViewer.setPointSize(value);
+      },
+      setSplatScale: (value: number) => {
+        if (activeViewer instanceof SplatViewer) activeViewer.setSplatScale(value);
+      },
+      setMoveSpeed: (value: number) => activeViewer?.setMoveSpeed(value),
+      setLockToBounds: (value: boolean) => activeViewer?.setLockToBounds(value)
+    });
   });
   return panel;
 }
 
-async function loadViewer(host: HTMLElement, manifest: Manifest, overlay: HTMLElement): Promise<void> {
+async function loadAsset(host: HTMLElement, overlay: HTMLElement, state: AppState): Promise<{ info: PlyInfo | null; message: string }> {
+  const asset = state.activeAsset;
+  if (!asset) return { info: null, message: 'No asset.' };
   host.replaceChildren();
-  const camera = manifest.viewer.camera;
-  const url = manifest.viewer.active_url;
-  if (!url) return;
-  overlay.textContent = `Loading ${assetLabel(manifest)}...`;
-  if (manifest.viewer.active_type === 'splat') {
-    const viewer = new SplatViewer(host, camera);
+  const info = await inspectPlyAsset(asset.url, asset.ply);
+  const assetType = info?.asset_type ?? 'unknown';
+  activeKind = assetType;
+  const countText = info?.vertex_count ? info.vertex_count.toLocaleString() : 'unknown';
+  overlay.textContent = `${asset.name} - ${assetType} - loading`;
+  const camera = { position: [0, 1, 3] as [number, number, number], look_at: [0, 0, 0] as [number, number, number], fov: 60 };
+  if (assetType === 'gaussian_splat') {
+    const viewer = new SplatViewer(host, camera, state.moveSpeed, state.lockToBounds);
     activeViewer = viewer;
-    const count = await viewer.load(url);
-    overlay.textContent = `${assetLabel(manifest)}${count ? ` · ${count.toLocaleString()} splats` : ''}`;
-    return;
+    const loaded = await viewer.load(asset.url, state.transform, info?.bounds ?? null, state.splatScale);
+    const message = `${asset.name} - 3DGS PLY - ${(loaded ?? info?.vertex_count ?? 0).toLocaleString()} splats`;
+    overlay.textContent = message;
+    return { info, message };
   }
-  const viewer = new PointCloudViewer(host, camera);
+  const viewer = new PointCloudViewer(host, camera, state.moveSpeed, state.lockToBounds);
   activeViewer = viewer;
-  const count =
-    manifest.viewer.active_type === 'preview_points' ? await viewer.loadPreviewPoints(url) : await viewer.loadPly(url);
-  overlay.textContent = `${assetLabel(manifest)} · ${count.toLocaleString()} points`;
+  const loaded = await viewer.loadPly(asset.url, state.transform, info?.bounds ?? null);
+  viewer.setPointSize(state.pointSize);
+  const message = `${asset.name} - point cloud PLY - ${loaded.toLocaleString()} points`;
+  overlay.textContent = message || `${asset.name} - ${countText} points`;
+  return { info, message };
 }
 
-function overlayText(manifest: Manifest | null): string {
-  if (!manifest) return 'Viewer waiting for a manifest.';
-  const base = assetLabel(manifest);
-  return manifest.message ? `${base} · ${manifest.message}` : base;
-}
-
-function assetLabel(manifest: Manifest): string {
-  if (manifest.viewer.active_type === 'splat') {
-    return manifest.status.has_3dgs_preview ? '3DGS preview' : '3DGS cached';
-  }
-  if (manifest.viewer.active_type === 'none') return 'No 3D asset';
-  return 'COLMAP preview';
+export function currentViewerKind(): string {
+  return activeKind;
 }
