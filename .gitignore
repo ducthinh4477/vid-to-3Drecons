@@ -27,6 +27,8 @@ outputs/*
 
 # Third-party checkouts
 third_party/speedy-splat/
+third_party/supersplat-viewer/
+third_party/vis-3dgs/
 
 # Viewer build/runtime
 viewer/node_modules/
@@ -79,5 +81,8 @@ outputs/reports/*
 !outputs/3dgs/
 outputs/3dgs/*
 !outputs/3dgs/.gitkeep
+!outputs/demo/
+outputs/demo/*
+!outputs/demo/.gitkeep
 !third_party/
 !third_party/.gitkeep
