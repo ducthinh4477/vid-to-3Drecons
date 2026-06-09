@@ -127,6 +127,8 @@ vid-to-3Drecons/
     12_collect_3dgs_output.py
     13_export_demo_assets.py
     14_launch_demo.py
+    15_export_colmap_preview.py
+    16_run_web_demo.py
   src/
     frame_quality/
     reconstruction/
@@ -269,17 +271,54 @@ Suggested 3DGS command:
 python train.py -s C:\GitHub\vid-to-3Drecons\data\3dgs\scene01_light -m output\scene01_light_3dgs_7k --iterations 7000 --resolution 2
 ```
 
+## One-page Web Demo
+
+The main demo now runs the whole presentation flow in one local web app:
+
+```text
+video -> frame filtering -> COLMAP SIFT preview -> cached 3DGS viewer when available
+```
+
+Run it from the repository root:
+
+```powershell
+cd C:\GitHub\vid-to-3Drecons
+conda activate vid3d
+pip install -r requirements.txt
+cd viewer
+npm install
+npm run build
+cd ..
+python scripts/16_run_web_demo.py --port 8088
+```
+
+Open:
+
+```text
+http://127.0.0.1:8088
+```
+
+Demo modes:
+
+- `instant`: video -> frames -> quality -> selected frames -> COLMAP preview. It does not train 3DGS.
+- `cached`: runs or displays the same pipeline, then loads a cached 3DGS asset from `outputs/demo/<scene>_<policy>/` if present. If the cache is missing, the app says `3DGS cached model not found, showing COLMAP preview.`
+- `preview`: prepares the 3DGS dataset and tries a short training run using `GAUSSIAN_SPLATTING_PATH`. If that path is not configured, the app reports the problem clearly and falls back to COLMAP preview.
+
+Full 3DGS training is not realtime. For presentation, the app uses cached 3DGS results trained offline from the same scene, while COLMAP preview proves the video-to-3D pipeline is running.
+
+The one-page app does not open SuperSplat, GaussianViewer, ViS-3DGS, or a VSCode extension as the main demo. It renders the selected 3D asset in the same canvas using Three.js and `@mkkellogg/gaussian-splats-3d` where a splat cache is available.
+
 ## Visual Demo Layer
 
-The visual demo layer packages trained 3DGS output for browser inspection after COLMAP poses are available. It is not part of the current quantitative report pipeline.
+The legacy visual demo scripts package trained 3DGS output for browser inspection after COLMAP poses are available. They are not the main demo path and are not part of the current quantitative report pipeline.
 
-Supported viewers:
+Legacy inspection viewers:
 
 - local web viewer in `viewer/`, using `@mkkellogg/gaussian-splats-3d`
 - SuperSplat Viewer static web app from `@playcanvas/supersplat-viewer`
 - ViS-3DGS in VSCode as an optional external inspection tool
 
-These tools are only used to view trained 3DGS results. The current project metrics remain COLMAP automatic_reconstructor metrics unless a separate trained 3DGS experiment is explicitly documented.
+These tools are only used to inspect trained 3DGS results outside the one-page demo. The current project metrics remain COLMAP automatic_reconstructor metrics unless a separate trained 3DGS experiment is explicitly documented.
 
 Install/build viewer assets:
 

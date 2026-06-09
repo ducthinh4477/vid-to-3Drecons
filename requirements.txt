@@ -11,3 +11,5 @@ plyfile
 torch
 torchvision
 torchaudio
+fastapi
+uvicorn
